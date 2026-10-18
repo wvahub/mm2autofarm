@@ -4,16 +4,16 @@ local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 
--- ===== CONFIGURACIÓN ULTRA-RÁPIDA =====
+-- ===== CONFIGURACIÓN ULTRA-RÁPIDA (SIN REBOTES) =====
 local TOGGLE_KEY = Enum.KeyCode.H
-local REST_TIME = 0.05         -- Se queda casi nada de tiempo tras recolectar
-local TRAVEL_DELAY = 0.05      -- No espera para ir al siguiente
-local TRAVEL_SPEED = 24        -- Un poco más rápido
-local HOVER_HEIGHT = 1.5       -- Vuela más bajo para tocar la moneda al instante
-local DROP_TIME = 0.1          -- Cae inmediatamente
+local REST_TIME = 0.05         -- Velocidad extrema
+local TRAVEL_DELAY = 0         -- Sin esperas entre vuelos
+local TRAVEL_SPEED = 24        
+local HOVER_HEIGHT = 0         -- Vuela DIRECTO a la moneda, impacto instantáneo
+local DROP_TIME = 0            -- Sin tiempo de caída
 local SAFE_DISTANCE = 40   
 local AVOID_PLAYERS = false    
-local SKIP_SECONDS = 5     
+local SKIP_SECONDS = 3         -- Ignora la posición visitada durante 3 segundos
 local REQUIRE_VISIBLE = false 
 local MAX_FARM_DISTANCE = 1500 
 
@@ -46,7 +46,6 @@ stroke.Color = Color3.fromRGB(60, 60, 75)
 stroke.Thickness = 1
 Instance.new("UIListLayout", frame).SortOrder = Enum.SortOrder.LayoutOrder
 
--- header
 local header = Instance.new("Frame")
 header.Size = UDim2.new(1, 0, 0, 36)
 header.BackgroundTransparency = 1
@@ -57,7 +56,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -50, 1, 0)
 title.Position = UDim2.new(0, 14, 0, 0)
 title.BackgroundTransparency = 1
-title.Text = "Speed Farm v6"
+title.Text = "InstaFarm v7"
 title.TextColor3 = TEXT
 title.Font = Enum.Font.GothamBold
 title.TextSize = 14
@@ -75,7 +74,6 @@ minBtn.TextSize = 16
 minBtn.Parent = header
 Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0, 6)
 
--- body
 local body = Instance.new("Frame")
 body.Size = UDim2.new(1, 0, 0, 0)
 body.AutomaticSize = Enum.AutomaticSize.Y
@@ -194,8 +192,8 @@ refreshAvoid()
 -- ===== Helpers =====
 local enabled = false
 local visited = 0
-local skippedNearby = 0
-local skipUntil = setmetatable({}, { __mode = "k" })
+local skipUntilObj = setmetatable({}, { __mode = "k" })
+local skippedPositions = {} -- NUEVO: Evita volver a la misma coordenada espacial
 local containerCache
 
 local function findContainer()
@@ -214,14 +212,12 @@ local function findContainer()
 	return nil
 end
 
--- Busca ESPECÍFICAMENTE la pieza que se puede recolectar (la que tiene el TouchInterest)
 local function getTargetPart(target)
 	for _, desc in target:GetDescendants() do
 		if desc:IsA("TouchInterest") then
 			return desc.Parent
 		end
 	end
-	-- Respaldo si el TouchInterest está oculto
 	if target:IsA("BasePart") then
 		return target
 	elseif target:IsA("Model") then
@@ -287,25 +283,41 @@ local function playerNear(position)
 end
 
 local function collectTargets(container)
-	local result, skipped, visibleCount = {}, 0, 0
+	local result = {}
+	local visibleCount = 0
 	local now = os.clock()
-	for _, obj in container:GetChildren() do 
+	
+	for _, obj in container:GetDescendants() do 
 		local lowerName = string.lower(obj.Name)
 		if string.find(lowerName, "coin") or string.find(lowerName, "cand") then
 			local part = getTargetPart(obj)
 			if part and isTargetVisible(part) then
 				visibleCount += 1
-				if not skipUntil[obj] or skipUntil[obj] < now then
-					if playerNear(part.Position) then
-						skipped += 1
-					else
-						table.insert(result, { target = obj, part = part })
+				
+				-- 1. Ignorar si el objeto ya se visitó
+				if skipUntilObj[obj] and skipUntilObj[obj] > now then continue end
+				
+				-- 2. NUEVO: Ignorar si ESTA POSICIÓN ESPACIAL se visitó hace poco
+				local posIsSkipped = false
+				for sp, exp in pairs(skippedPositions) do
+					if now > exp then
+						skippedPositions[sp] = nil -- Limpiar posiciones expiradas
+					elseif (part.Position - sp).Magnitude < 3 then
+						posIsSkipped = true
+						break
 					end
 				end
+				
+				if posIsSkipped then continue end
+				
+				-- 3. Ignorar por jugadores
+				if playerNear(part.Position) then continue end
+				
+				table.insert(result, { target = obj, part = part })
 			end
 		end
 	end
-	return result, skipped, visibleCount
+	return result, visibleCount
 end
 
 local function touch(root, part)
@@ -364,22 +376,16 @@ local function loop()
 
 		local container = findContainer()
 		if not container then
-			status.Text = "Waiting for round (No targets spawned)"
+			status.Text = "Waiting for round (No targets)"
 			task.wait(1)
 			continue
 		end
 
-		local targets, skipped, visibleCount = collectTargets(container)
+		local targets, visibleCount = collectTargets(container)
 
-		if visibleCount == 0 then
-			status.Text = ("No targets left | Visited: %d"):format(visited)
-			task.wait(0.5)
-			continue
-		end
-
-		if #targets == 0 then
-			status.Text = ("Targets skipped (players near) | Visited: %d"):format(visited)
-			task.wait(0.5)
+		if visibleCount == 0 or #targets == 0 then
+			status.Text = ("No targets left / skipped | Visited: %d"):format(visited)
+			task.wait(0.2)
 			continue
 		end
 
@@ -399,39 +405,24 @@ local function loop()
 			continue
 		end
 
-		task.wait(TRAVEL_DELAY)
+		-- REGISTRAMOS EL TARGET INMEDIATAMENTE ANTES DE VOLAR PARA EVITAR REPETICIÓN
+		skipUntilObj[entry.target] = os.clock() + SKIP_SECONDS
+		skippedPositions[entry.part.Position] = os.clock() + SKIP_SECONDS
+
+		if TRAVEL_DELAY > 0 then task.wait(TRAVEL_DELAY) end
 
 		root = getRoot()
 		if not enabled or not root or touchingLobby(root) then continue end
-		if not entry.target.Parent or not isTargetVisible(entry.part) then
-			continue 
-		end
 
-		if playerNear(entry.part.Position) then
-			skippedNearby += 1
-			skipUntil[entry.target] = os.clock() + SKIP_SECONDS
-			continue
-		end
-
-		status.Text = ("Zipping to target... %d studs"):format(math.floor(bestDist))
+		status.Text = ("Zipping... %d studs"):format(math.floor(bestDist))
 		glideAbove(root, entry.part) 
 
 		if not enabled or touchingLobby(root) then continue end
-		if not entry.target.Parent or not isTargetVisible(entry.part) then
-			continue
-		end
-
-		task.wait(DROP_TIME)
-		if isTargetVisible(entry.part) then
-			touch(root, entry.part) 
-		end
+		
+		touch(root, entry.part) 
 		visited += 1
 
-		task.wait(REST_TIME)
-
-		if entry.target.Parent then
-			skipUntil[entry.target] = os.clock() + SKIP_SECONDS
-		end
+		if REST_TIME > 0 then task.wait(REST_TIME) end
 	end
 	status.Text = ("Idle | Visited: %d"):format(visited)
 end
