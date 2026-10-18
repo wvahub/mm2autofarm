@@ -5,7 +5,6 @@ local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 
 -- ===== CONFIGURACIÓN OPTIMIZADA =====
-local LOBBY_NAME = "MainLobby"  
 local TOGGLE_KEY = Enum.KeyCode.H
 local REST_TIME = 0.8          
 local TRAVEL_DELAY = 0.5       
@@ -16,6 +15,7 @@ local SAFE_DISTANCE = 40
 local AVOID_PLAYERS = false    
 local SKIP_SECONDS = 5     
 local REQUIRE_VISIBLE = false 
+local MAX_FARM_DISTANCE = 1500 
 
 -- ===== THEME =====
 local BG = Color3.fromRGB(24, 24, 30)
@@ -57,7 +57,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -50, 1, 0)
 title.Position = UDim2.new(0, 14, 0, 0)
 title.BackgroundTransparency = 1
-title.Text = "Smart Farm"
+title.Text = "Smart Farm v5"
 title.TextColor3 = TEXT
 title.Font = Enum.Font.GothamBold
 title.TextSize = 14
@@ -197,17 +197,12 @@ local visited = 0
 local skippedNearby = 0
 local skipUntil = setmetatable({}, { __mode = "k" })
 local containerCache
-local deadThisRound = false 
 
--- ==========================================
--- BÚSQUEDA INTELIGENTE DE CONTENEDOR (NUEVO)
--- ==========================================
+-- Buscador de Contenedor
 local function findContainer()
 	if containerCache and containerCache.Parent then
 		return containerCache
 	end
-	
-	-- Paso 1: Busca la primera moneda del mapa y usa su carpeta padre como el contenedor
 	for _, obj in workspace:GetDescendants() do
 		local lowerName = string.lower(obj.Name)
 		if string.find(lowerName, "coin") or string.find(lowerName, "cand") then
@@ -217,7 +212,6 @@ local function findContainer()
 			end
 		end
 	end
-
 	return nil
 end
 
@@ -242,38 +236,41 @@ local function getRoot()
 	return char:FindFirstChild("HumanoidRootPart")
 end
 
-local function hookCharacter(char)
-	local hum = char:WaitForChild("Humanoid", 10)
-	if hum then
-		hum.Died:Connect(function()
-			deadThisRound = true
-		end)
-	end
-end
-player.CharacterAdded:Connect(hookCharacter)
-if player.Character then
-	task.spawn(hookCharacter, player.Character)
-end
-
-local lobbyCache
-local lobbyParams = OverlapParams.new()
-lobbyParams.FilterType = Enum.RaycastFilterType.Include
-
-local function findLobby()
-	if lobbyCache and lobbyCache.Parent then
-		return lobbyCache
-	end
-	lobbyCache = workspace:FindFirstChild(LOBBY_NAME, true)
-	return lobbyCache
-end
-
+-- =======================================================
+-- DETECTOR DE LOBBY FÍSICO (NUEVO SISTEMA EXCLUSIVO)
+-- =======================================================
 local function touchingLobby(root)
-	local lobby = findLobby()
-	if not lobby or not root then return false end
-	lobbyParams.FilterDescendantsInstances = { lobby }
-	local size = Vector3.new(6, 10, 6)
-	local parts = workspace:GetPartBoundsInBox(root.CFrame * CFrame.new(0, -2, 0), size, lobbyParams)
-	return #parts > 0
+	if not root then return false end
+	
+	-- 1. Detectar si estamos cerca de un SpawnLocation (Solo existen en el lobby)
+	for _, obj in workspace:GetDescendants() do
+		if obj:IsA("SpawnLocation") then
+			if (root.Position - obj.Position).Magnitude < 150 then
+				return true
+			end
+		end
+	end
+	
+	-- 2. Detectar si el suelo que pisamos pertenece a una carpeta llamada Lobby/Spawn mediante láser
+	local rayOrigin = root.Position
+	local rayDirection = Vector3.new(0, -15, 0) 
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterDescendantsInstances = {player.Character}
+	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+
+	local result = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+	if result and result.Instance then
+		local current = result.Instance
+		while current and current ~= workspace do
+			local name = string.lower(current.Name)
+			if string.find(name, "lobby") or string.find(name, "spawn") then
+				return true
+			end
+			current = current.Parent
+		end
+	end
+
+	return false
 end
 
 local function playerNear(position)
@@ -293,9 +290,8 @@ end
 local function collectTargets(container)
 	local result, skipped, visibleCount = {}, 0, 0
 	local now = os.clock()
-	for _, obj in container:GetChildren() do -- Solo busca dentro del contenedor inteligente
+	for _, obj in container:GetChildren() do 
 		local lowerName = string.lower(obj.Name)
-		
 		if string.find(lowerName, "coin") or string.find(lowerName, "cand") then
 			local part = getTargetPart(obj)
 			if isTargetVisible(part) then
@@ -339,7 +335,7 @@ local function glideAbove(root, part)
 
 	task.spawn(function()
 		while tween.PlaybackState == Enum.PlaybackState.Playing do
-			if not enabled or deadThisRound or not isTargetVisible(part) or touchingLobby(root) then
+			if not enabled or not isTargetVisible(part) or touchingLobby(root) then
 				tween:Cancel()
 				break
 			end
@@ -354,13 +350,6 @@ end
 -- ===== Main loop =====
 local function loop()
 	while enabled do
-		local container = findContainer()
-		if not container then
-			status.Text = "Waiting for round (No coins spawned)"
-			task.wait(1)
-			continue
-		end
-
 		local root = getRoot()
 		if not root then
 			status.Text = "Waiting for character..."
@@ -368,23 +357,24 @@ local function loop()
 			continue
 		end
 
+		-- Si estamos en el lobby, no hacemos nada más que esperar
 		if touchingLobby(root) then
-			status.Text = ("Waiting in lobby | Visited: %d"):format(visited)
-			task.wait(0.3)
+			status.Text = ("Waiting in lobby zone | Visited: %d"):format(visited)
+			task.wait(0.5)
+			continue
+		end
+
+		local container = findContainer()
+		if not container then
+			status.Text = "Waiting for round (No targets spawned)"
+			task.wait(1)
 			continue
 		end
 
 		local targets, skipped, visibleCount = collectTargets(container)
 
 		if visibleCount == 0 then
-			deadThisRound = false 
 			status.Text = ("No targets left | Visited: %d"):format(visited)
-			task.wait(0.5)
-			continue
-		end
-
-		if deadThisRound then
-			status.Text = ("Dead - waiting for next round | Visited: %d"):format(visited)
 			task.wait(0.5)
 			continue
 		end
@@ -405,14 +395,20 @@ local function loop()
 		end
 		local entry = best
 
+		-- Última validación de seguridad de distancia
+		if bestDist > MAX_FARM_DISTANCE then
+			status.Text = ("In Lobby (Map too far) | Visited: %d"):format(visited)
+			task.wait(1)
+			continue
+		end
+
 		task.wait(TRAVEL_DELAY)
 
 		root = getRoot()
-		if not enabled or deadThisRound or not root then continue end
+		if not enabled or not root or touchingLobby(root) then continue end
 		if not entry.target.Parent or not isTargetVisible(entry.part) then
 			continue 
 		end
-		if touchingLobby(root) then continue end
 
 		if playerNear(entry.part.Position) then
 			skippedNearby += 1
@@ -423,7 +419,8 @@ local function loop()
 		status.Text = ("Farming... %d studs | Visited: %d"):format(math.floor(bestDist), visited)
 		glideAbove(root, entry.part) 
 
-		if not enabled or deadThisRound or touchingLobby(root) then continue end
+		-- Comprobación post-vuelo
+		if not enabled or touchingLobby(root) then continue end
 		if not entry.target.Parent or not isTargetVisible(entry.part) then
 			continue
 		end
