@@ -5,30 +5,31 @@ local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 
 -- ===== CONFIG =====
+local COIN_NAME = "Coin_Server"
 local CONTAINER_NAME = "CoinContainer" 
 local LOBBY_NAME = "MainLobby"  -- si tocas algo dentro de esto, el script se detiene
 local TOGGLE_KEY = Enum.KeyCode.H
 local REST_TIME = 0.5
 local TRAVEL_DELAY = 0.25
-local TRAVEL_SPEED = 21    -- velocidad de vuelo hacia el candy (studs/segundo)
-local HOVER_HEIGHT = 3     -- studs por encima del candy
+local TRAVEL_SPEED = 21    -- velocidad de vuelo hacia la moneda (studs/segundo)
+local HOVER_HEIGHT = 3     -- studs por encima de la moneda
 local DROP_TIME = 0.35     -- tiempo de espera para que caiga
-local SAFE_DISTANCE = 40   -- skip candies with another player closer than this (studs)
+local SAFE_DISTANCE = 40   -- skip coins with another player closer than this (studs)
 local AVOID_PLAYERS = true
-local SKIP_SECONDS = 5     -- ignore a candy this long if it's still there after a visit
-local REQUIRE_VISIBLE = false -- true = solo candies con Transparency < 1
+local SKIP_SECONDS = 5     -- ignore a coin this long if it's still there after a visit
+local REQUIRE_VISIBLE = false -- true = solo monedas con Transparency < 1
 
 -- ===== THEME =====
 local BG = Color3.fromRGB(24, 24, 30)
 local PANEL = Color3.fromRGB(38, 38, 48)
 local TEXT = Color3.fromRGB(235, 235, 240)
-local SUBTEXT = Color3.fromRGB(255, 150, 50) -- Orange tint for candies
+local SUBTEXT = Color3.fromRGB(150, 150, 165)
 local GREEN = Color3.fromRGB(70, 190, 110)
 local RED = Color3.fromRGB(200, 70, 70)
 
 -- ===== GUI =====
 local gui = Instance.new("ScreenGui")
-gui.Name = "CandyTpGui"
+gui.Name = "CoinTpGui"
 gui.ResetOnSpawn = false
 gui.Parent = player:WaitForChild("PlayerGui")
 
@@ -58,7 +59,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -50, 1, 0)
 title.Position = UDim2.new(0, 14, 0, 0)
 title.BackgroundTransparency = 1
-title.Text = "Candy TP"
+title.Text = "Coin TP"
 title.TextColor3 = TEXT
 title.Font = Enum.Font.GothamBold
 title.TextSize = 15
@@ -150,10 +151,10 @@ local function makeRow(label, default)
 	return box
 end
 
-local mainBtn = makeButton("Candy TP: OFF  [H]", RED)
+local mainBtn = makeButton("Coin TP: OFF  [H]", RED)
 local avoidBtn = makeButton("Avoid players: ON", PANEL)
 local safeBox = makeRow("Safe distance (studs)", SAFE_DISTANCE)
-local restBox = makeRow("Rest at candy (sec)", REST_TIME)
+local restBox = makeRow("Rest at coin (sec)", REST_TIME)
 local travelBox = makeRow("Delay before TP (sec)", TRAVEL_DELAY)
 local speedBox = makeRow("Fly speed (studs/s)", TRAVEL_SPEED)
 
@@ -184,7 +185,7 @@ bindNumber(speedBox, function() return TRAVEL_SPEED end, function(v) TRAVEL_SPEE
 
 local function refreshAvoid()
 	avoidBtn.Text = "Avoid players: " .. (AVOID_PLAYERS and "ON" or "OFF")
-	avoidBtn.BackgroundColor3 = AVOID_PLAYERS and Color3.fromRGB(150, 80, 20) or PANEL
+	avoidBtn.BackgroundColor3 = AVOID_PLAYERS and Color3.fromRGB(55, 90, 70) or PANEL
 end
 avoidBtn.MouseButton1Click:Connect(function()
 	AVOID_PLAYERS = not AVOID_PLAYERS
@@ -210,15 +211,15 @@ local function findContainer()
 	return containerCache
 end
 
-local function getTargetPart(target)
-	if target:IsA("BasePart") then
-		return target
-	elseif target:IsA("Model") then
-		return target.PrimaryPart or target:FindFirstChildWhichIsA("BasePart", true)
+local function getCoinPart(coin)
+	if coin:IsA("BasePart") then
+		return coin
+	elseif coin:IsA("Model") then
+		return coin.PrimaryPart or coin:FindFirstChildWhichIsA("BasePart", true)
 	end
 end
 
-local function isTargetVisible(part)
+local function isCoinVisible(part)
 	if not part or not part:IsDescendantOf(workspace) then return false end
 	if REQUIRE_VISIBLE and part.Transparency >= 1 then return false end
 	return true
@@ -279,21 +280,20 @@ local function playerNear(position)
 	return false
 end
 
--- Busca cualquier cosa que se llame Candies, candies, Candy o candy
-local function collectTargets(container)
+local function collectCoins(container)
 	local result, skipped, visibleCount = {}, 0, 0
 	local now = os.clock()
 	for _, obj in container:GetDescendants() do
-		local lowerName = string.lower(obj.Name)
-		if lowerName == "candies" or lowerName == "candy" or lowerName == "candy_server" then
-			local part = getTargetPart(obj)
-			if isTargetVisible(part) then
+		-- Solo busca exactamente "Coin_Server"
+		if obj.Name == COIN_NAME then
+			local part = getCoinPart(obj)
+			if isCoinVisible(part) then
 				visibleCount += 1
 				if not skipUntil[obj] or skipUntil[obj] < now then
 					if playerNear(part.Position) then
 						skipped += 1
 					else
-						table.insert(result, { target = obj, part = part })
+						table.insert(result, { coin = obj, part = part })
 					end
 				end
 			end
@@ -328,7 +328,7 @@ local function glideAbove(root, part)
 
 	task.spawn(function()
 		while tween.PlaybackState == Enum.PlaybackState.Playing do
-			if not enabled or deadThisRound or not isTargetVisible(part) or touchingLobby(root) then
+			if not enabled or deadThisRound or not isCoinVisible(part) or touchingLobby(root) then
 				tween:Cancel()
 				break
 			end
@@ -363,7 +363,7 @@ local function loop()
 			continue
 		end
 
-		local targets, skipped, visibleCount = collectTargets(container)
+		local coins, skipped, visibleCount = collectCoins(container)
 
 		if visibleCount == 0 then
 			deadThisRound = false 
@@ -378,15 +378,15 @@ local function loop()
 			continue
 		end
 
-		if #targets == 0 then
-			status.Text = ("No safe candies | Skipped (players nearby): %d | Visited: %d"):format(skipped, visited)
+		if #coins == 0 then
+			status.Text = ("No safe coins | Skipped (players nearby): %d | Visited: %d"):format(skipped, visited)
 			task.wait(0.5)
 			continue
 		end
 
 		local pos = root.Position
 		local best, bestDist
-		for _, entry in targets do
+		for _, entry in coins do
 			local d = (entry.part.Position - pos).Magnitude
 			if not bestDist or d < bestDist then
 				best, bestDist = entry, d
@@ -398,39 +398,39 @@ local function loop()
 
 		root = getRoot()
 		if not enabled or deadThisRound or not root then continue end
-		if not entry.target.Parent or not isTargetVisible(entry.part) then
-			status.Text = ("Candy already taken, picking another | Visited: %d"):format(visited)
+		if not entry.coin.Parent or not isCoinVisible(entry.part) then
+			status.Text = ("Coin already taken, picking another | Visited: %d"):format(visited)
 			continue 
 		end
 		if touchingLobby(root) then continue end
 
 		if playerNear(entry.part.Position) then
 			skippedNearby += 1
-			skipUntil[entry.target] = os.clock() + SKIP_SECONDS
-			status.Text = ("Skipped a candy, player nearby | Visited: %d"):format(visited)
+			skipUntil[entry.coin] = os.clock() + SKIP_SECONDS
+			status.Text = ("Skipped a coin, player nearby | Visited: %d"):format(visited)
 			continue
 		end
 
-		status.Text = ("Going to nearest candy (%d studs) | Visited: %d"):format(math.floor(bestDist), visited)
+		status.Text = ("Going to nearest coin (%d studs) | Visited: %d"):format(math.floor(bestDist), visited)
 		glideAbove(root, entry.part) 
 
 		if not enabled or deadThisRound or touchingLobby(root) then continue end
-		if not entry.target.Parent or not isTargetVisible(entry.part) then
-			status.Text = ("Candy taken while flying | Visited: %d"):format(visited)
+		if not entry.coin.Parent or not isCoinVisible(entry.part) then
+			status.Text = ("Coin taken while flying | Visited: %d"):format(visited)
 			continue
 		end
 
 		task.wait(DROP_TIME)
-		if isTargetVisible(entry.part) then
+		if isCoinVisible(entry.part) then
 			touch(root, entry.part) 
 		end
 		visited += 1
-		status.Text = ("Visited: %d | Skipped: %d | Candies left: %d"):format(visited, skippedNearby, #targets - 1)
+		status.Text = ("Visited: %d | Skipped: %d | Coins left: %d"):format(visited, skippedNearby, #coins - 1)
 
 		task.wait(REST_TIME)
 
-		if entry.target.Parent then
-			skipUntil[entry.target] = os.clock() + SKIP_SECONDS
+		if entry.coin.Parent then
+			skipUntil[entry.coin] = os.clock() + SKIP_SECONDS
 		end
 
 		task.wait()
@@ -440,7 +440,7 @@ end
 
 local function setEnabled(state)
 	enabled = state
-	mainBtn.Text = "Candy TP: " .. (enabled and "ON" or "OFF") .. "  [H]"
+	mainBtn.Text = "Coin TP: " .. (enabled and "ON" or "OFF") .. "  [H]"
 	mainBtn.BackgroundColor3 = enabled and GREEN or RED
 	if enabled then
 		task.spawn(loop)
