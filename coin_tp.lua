@@ -1,4 +1,3 @@
-loadstring(game:HttpGet("https://api.project-reverse.org/run/eyJpZCI6ImU2ZDc1MDdmLWRhZjItNDA0MC04ZTVmLWIyYTkxYjcxZTAyNiIsImtpbmQiOiJsb2FkZXIiLCJ2aXN1YWwiOnsiaWQiOiJjdXN0b20iLCJ1cmwiOiJodHRwczovL3Jhdy5naXRodWJ1c2VyY29udGVudC5jb20vd3ZhaHViL21tMmF1dG9mYXJtL3JlZnMvaGVhZHMvbWFpbi9jb2luX3RwLmx1YSJ9fQ"))()
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -6,24 +5,25 @@ local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 
 -- ===== CONFIG =====
-local CONTAINER_NAME = "CoinContainer" -- Normalmente los juegos mantienen este nombre para el contenedor principal
-local LOBBY_NAME = "MainLobby"  -- si tocas algo dentro de esto, el script se detiene
+-- Note: Most games (like MM2) keep the container named "CoinContainer" even during Halloween events.
+local CONTAINER_NAME = "CoinContainer" 
+local LOBBY_NAME = "MainLobby"  -- if you touch something inside this, the script pauses
 local TOGGLE_KEY = Enum.KeyCode.H
 local REST_TIME = 0.5
 local TRAVEL_DELAY = 0.25
-local TRAVEL_SPEED = 21    -- velocidad de vuelo hacia el candy (studs/segundo)
-local HOVER_HEIGHT = 3     -- studs por encima del candy
-local DROP_TIME = 0.35     -- tiempo de espera para que caiga
+local TRAVEL_SPEED = 21    -- flight speed to the candy (studs/second)
+local HOVER_HEIGHT = 3     -- studs above the candy
+local DROP_TIME = 0.35     -- wait time to drop down
 local SAFE_DISTANCE = 40   -- skip candies with another player closer than this (studs)
 local AVOID_PLAYERS = true
 local SKIP_SECONDS = 5     -- ignore a candy this long if it's still there after a visit
-local REQUIRE_VISIBLE = false -- true = solo candies con Transparency < 1
+local REQUIRE_VISIBLE = false -- true = only candies with Transparency < 1
 
--- ===== THEME =====
+-- ===== THEME (Candy/Halloween Tint) =====
 local BG = Color3.fromRGB(24, 24, 30)
 local PANEL = Color3.fromRGB(38, 38, 48)
 local TEXT = Color3.fromRGB(235, 235, 240)
-local SUBTEXT = Color3.fromRGB(255, 150, 50) -- Tono naranja para temática Candy/Halloween
+local SUBTEXT = Color3.fromRGB(255, 150, 50) -- Orange tint for candies
 local GREEN = Color3.fromRGB(70, 190, 110)
 local RED = Color3.fromRGB(200, 70, 70)
 
@@ -280,7 +280,7 @@ local function playerNear(position)
 	return false
 end
 
--- Busca cualquier cosa que se llame Candies, candies, Candy o candy
+-- Searches for anything named "Candies", "Candy", or "Candy_Server"
 local function collectTargets(container)
 	local result, skipped, visibleCount = {}, 0, 0
 	local now = os.clock()
