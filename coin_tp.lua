@@ -5,7 +5,6 @@ local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 
 -- ===== CONFIGURACIÓN OPTIMIZADA =====
-local CONTAINER_NAME = "CoinContainer" 
 local LOBBY_NAME = "MainLobby"  
 local TOGGLE_KEY = Enum.KeyCode.H
 local REST_TIME = 0.8          
@@ -14,7 +13,7 @@ local TRAVEL_SPEED = 21
 local HOVER_HEIGHT = 3     
 local DROP_TIME = 0.35     
 local SAFE_DISTANCE = 40   
-local AVOID_PLAYERS = false    -- OFF por defecto para evitar lag
+local AVOID_PLAYERS = false    
 local SKIP_SECONDS = 5     
 local REQUIRE_VISIBLE = false 
 
@@ -28,7 +27,7 @@ local RED = Color3.fromRGB(200, 70, 70)
 
 -- ===== GUI =====
 local gui = Instance.new("ScreenGui")
-gui.Name = "UniversalTpGui"
+gui.Name = "SmartTpGui"
 gui.ResetOnSpawn = false
 gui.Parent = player:WaitForChild("PlayerGui")
 
@@ -58,7 +57,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -50, 1, 0)
 title.Position = UDim2.new(0, 14, 0, 0)
 title.BackgroundTransparency = 1
-title.Text = "Farm (Coins/Candies)"
+title.Text = "Smart Farm"
 title.TextColor3 = TEXT
 title.Font = Enum.Font.GothamBold
 title.TextSize = 14
@@ -152,10 +151,10 @@ end
 
 local mainBtn = makeButton("Auto Farm: OFF  [H]", RED)
 local avoidBtn = makeButton("Avoid players: OFF", PANEL)
-local safeBox = makeRow("Safe distance (studs)", SAFE_DISTANCE)
-local restBox = makeRow("Rest at target (sec)", REST_TIME)
-local travelBox = makeRow("Delay before TP (sec)", TRAVEL_DELAY)
-local speedBox = makeRow("Fly speed (studs/s)", TRAVEL_SPEED)
+local safeBox = makeRow("Safe distance", SAFE_DISTANCE)
+local restBox = makeRow("Rest at target", REST_TIME)
+local travelBox = makeRow("Delay before TP", TRAVEL_DELAY)
+local speedBox = makeRow("Fly speed", TRAVEL_SPEED)
 
 local status = Instance.new("TextLabel")
 status.Size = UDim2.new(1, 0, 0, 34)
@@ -200,14 +199,26 @@ local skipUntil = setmetatable({}, { __mode = "k" })
 local containerCache
 local deadThisRound = false 
 
+-- ==========================================
+-- BÚSQUEDA INTELIGENTE DE CONTENEDOR (NUEVO)
+-- ==========================================
 local function findContainer()
 	if containerCache and containerCache.Parent then
 		return containerCache
 	end
-	local wp = workspace:FindFirstChild("Workplace")
-	containerCache = (wp and wp:FindFirstChild(CONTAINER_NAME, true))
-		or workspace:FindFirstChild(CONTAINER_NAME, true)
-	return containerCache
+	
+	-- Paso 1: Busca la primera moneda del mapa y usa su carpeta padre como el contenedor
+	for _, obj in workspace:GetDescendants() do
+		local lowerName = string.lower(obj.Name)
+		if string.find(lowerName, "coin") or string.find(lowerName, "cand") then
+			if obj:IsA("BasePart") or obj:IsA("Model") then
+				containerCache = obj.Parent
+				return containerCache
+			end
+		end
+	end
+
+	return nil
 end
 
 local function getTargetPart(target)
@@ -279,16 +290,12 @@ local function playerNear(position)
 	return false
 end
 
--- =========================================================
--- AQUÍ ESTÁ LA MAGIA: BUSCA CUALQUIER COSA QUE CONTENGA "COIN" O "CAND"
--- =========================================================
 local function collectTargets(container)
 	local result, skipped, visibleCount = {}, 0, 0
 	local now = os.clock()
-	for _, obj in container:GetDescendants() do
+	for _, obj in container:GetChildren() do -- Solo busca dentro del contenedor inteligente
 		local lowerName = string.lower(obj.Name)
 		
-		-- Si el nombre contiene "coin" o "cand" (sirve para candy/candies), lo atrapa.
 		if string.find(lowerName, "coin") or string.find(lowerName, "cand") then
 			local part = getTargetPart(obj)
 			if isTargetVisible(part) then
@@ -349,7 +356,7 @@ local function loop()
 	while enabled do
 		local container = findContainer()
 		if not container then
-			status.Text = "Waiting for round (no Container)"
+			status.Text = "Waiting for round (No coins spawned)"
 			task.wait(1)
 			continue
 		end
@@ -362,7 +369,7 @@ local function loop()
 		end
 
 		if touchingLobby(root) then
-			status.Text = ("Waiting for round to start | Visited: %d"):format(visited)
+			status.Text = ("Waiting in lobby | Visited: %d"):format(visited)
 			task.wait(0.3)
 			continue
 		end
@@ -371,19 +378,19 @@ local function loop()
 
 		if visibleCount == 0 then
 			deadThisRound = false 
-			status.Text = ("Waiting for round to start | Visited: %d"):format(visited)
+			status.Text = ("No targets left | Visited: %d"):format(visited)
 			task.wait(0.5)
 			continue
 		end
 
 		if deadThisRound then
-			status.Text = ("Dead / in lobby - waiting for next round | Visited: %d"):format(visited)
+			status.Text = ("Dead - waiting for next round | Visited: %d"):format(visited)
 			task.wait(0.5)
 			continue
 		end
 
 		if #targets == 0 then
-			status.Text = ("No safe targets | Skipped (players nearby): %d | Visited: %d"):format(skipped, visited)
+			status.Text = ("Targets skipped (players near) | Visited: %d"):format(visited)
 			task.wait(0.5)
 			continue
 		end
@@ -403,7 +410,6 @@ local function loop()
 		root = getRoot()
 		if not enabled or deadThisRound or not root then continue end
 		if not entry.target.Parent or not isTargetVisible(entry.part) then
-			status.Text = ("Target already taken, picking another | Visited: %d"):format(visited)
 			continue 
 		end
 		if touchingLobby(root) then continue end
@@ -411,16 +417,14 @@ local function loop()
 		if playerNear(entry.part.Position) then
 			skippedNearby += 1
 			skipUntil[entry.target] = os.clock() + SKIP_SECONDS
-			status.Text = ("Skipped a target, player nearby | Visited: %d"):format(visited)
 			continue
 		end
 
-		status.Text = ("Going to nearest target (%d studs) | Visited: %d"):format(math.floor(bestDist), visited)
+		status.Text = ("Farming... %d studs | Visited: %d"):format(math.floor(bestDist), visited)
 		glideAbove(root, entry.part) 
 
 		if not enabled or deadThisRound or touchingLobby(root) then continue end
 		if not entry.target.Parent or not isTargetVisible(entry.part) then
-			status.Text = ("Target taken while flying | Visited: %d"):format(visited)
 			continue
 		end
 
@@ -429,7 +433,7 @@ local function loop()
 			touch(root, entry.part) 
 		end
 		visited += 1
-		status.Text = ("Visited: %d | Skipped: %d | Targets left: %d"):format(visited, skippedNearby, #targets - 1)
+		status.Text = ("Visited: %d | Left: %d"):format(visited, #targets - 1)
 
 		task.wait(REST_TIME)
 
@@ -439,7 +443,7 @@ local function loop()
 
 		task.wait()
 	end
-	status.Text = ("Idle | Visited: %d | Skipped: %d"):format(visited, skippedNearby)
+	status.Text = ("Idle | Visited: %d"):format(visited)
 end
 
 local function setEnabled(state)
