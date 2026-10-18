@@ -4,32 +4,31 @@ local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 
--- ===== CONFIG =====
--- Note: Most games (like MM2) keep the container named "CoinContainer" even during Halloween events.
+-- ===== CONFIGURACIÓN OPTIMIZADA =====
 local CONTAINER_NAME = "CoinContainer" 
-local LOBBY_NAME = "MainLobby"  -- if you touch something inside this, the script pauses
+local LOBBY_NAME = "MainLobby"  
 local TOGGLE_KEY = Enum.KeyCode.H
-local REST_TIME = 0.5
-local TRAVEL_DELAY = 0.25
-local TRAVEL_SPEED = 21    -- flight speed to the candy (studs/second)
-local HOVER_HEIGHT = 3     -- studs above the candy
-local DROP_TIME = 0.35     -- wait time to drop down
-local SAFE_DISTANCE = 40   -- skip candies with another player closer than this (studs)
-local AVOID_PLAYERS = true
-local SKIP_SECONDS = 5     -- ignore a candy this long if it's still there after a visit
-local REQUIRE_VISIBLE = false -- true = only candies with Transparency < 1
+local REST_TIME = 0.8          
+local TRAVEL_DELAY = 0.5       
+local TRAVEL_SPEED = 21    
+local HOVER_HEIGHT = 3     
+local DROP_TIME = 0.35     
+local SAFE_DISTANCE = 40   
+local AVOID_PLAYERS = false    -- OFF por defecto para evitar lag
+local SKIP_SECONDS = 5     
+local REQUIRE_VISIBLE = false 
 
--- ===== THEME (Candy/Halloween Tint) =====
+-- ===== THEME =====
 local BG = Color3.fromRGB(24, 24, 30)
 local PANEL = Color3.fromRGB(38, 38, 48)
 local TEXT = Color3.fromRGB(235, 235, 240)
-local SUBTEXT = Color3.fromRGB(255, 150, 50) -- Orange tint for candies
+local SUBTEXT = Color3.fromRGB(200, 200, 220) 
 local GREEN = Color3.fromRGB(70, 190, 110)
 local RED = Color3.fromRGB(200, 70, 70)
 
 -- ===== GUI =====
 local gui = Instance.new("ScreenGui")
-gui.Name = "CandyTpGui"
+gui.Name = "UniversalTpGui"
 gui.ResetOnSpawn = false
 gui.Parent = player:WaitForChild("PlayerGui")
 
@@ -59,10 +58,10 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -50, 1, 0)
 title.Position = UDim2.new(0, 14, 0, 0)
 title.BackgroundTransparency = 1
-title.Text = "Candy TP"
+title.Text = "Farm (Coins/Candies)"
 title.TextColor3 = TEXT
 title.Font = Enum.Font.GothamBold
-title.TextSize = 15
+title.TextSize = 14
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.Parent = header
 
@@ -151,10 +150,10 @@ local function makeRow(label, default)
 	return box
 end
 
-local mainBtn = makeButton("Candy TP: OFF  [H]", RED)
-local avoidBtn = makeButton("Avoid players: ON", PANEL)
+local mainBtn = makeButton("Auto Farm: OFF  [H]", RED)
+local avoidBtn = makeButton("Avoid players: OFF", PANEL)
 local safeBox = makeRow("Safe distance (studs)", SAFE_DISTANCE)
-local restBox = makeRow("Rest at candy (sec)", REST_TIME)
+local restBox = makeRow("Rest at target (sec)", REST_TIME)
 local travelBox = makeRow("Delay before TP (sec)", TRAVEL_DELAY)
 local speedBox = makeRow("Fly speed (studs/s)", TRAVEL_SPEED)
 
@@ -280,13 +279,17 @@ local function playerNear(position)
 	return false
 end
 
--- Searches for anything named "Candies", "Candy", or "Candy_Server"
+-- =========================================================
+-- AQUÍ ESTÁ LA MAGIA: BUSCA CUALQUIER COSA QUE CONTENGA "COIN" O "CAND"
+-- =========================================================
 local function collectTargets(container)
 	local result, skipped, visibleCount = {}, 0, 0
 	local now = os.clock()
 	for _, obj in container:GetDescendants() do
 		local lowerName = string.lower(obj.Name)
-		if lowerName == "candies" or lowerName == "candy" or lowerName == "candy_server" then
+		
+		-- Si el nombre contiene "coin" o "cand" (sirve para candy/candies), lo atrapa.
+		if string.find(lowerName, "coin") or string.find(lowerName, "cand") then
 			local part = getTargetPart(obj)
 			if isTargetVisible(part) then
 				visibleCount += 1
@@ -380,7 +383,7 @@ local function loop()
 		end
 
 		if #targets == 0 then
-			status.Text = ("No safe candies | Skipped (players nearby): %d | Visited: %d"):format(skipped, visited)
+			status.Text = ("No safe targets | Skipped (players nearby): %d | Visited: %d"):format(skipped, visited)
 			task.wait(0.5)
 			continue
 		end
@@ -400,7 +403,7 @@ local function loop()
 		root = getRoot()
 		if not enabled or deadThisRound or not root then continue end
 		if not entry.target.Parent or not isTargetVisible(entry.part) then
-			status.Text = ("Candy already taken, picking another | Visited: %d"):format(visited)
+			status.Text = ("Target already taken, picking another | Visited: %d"):format(visited)
 			continue 
 		end
 		if touchingLobby(root) then continue end
@@ -408,16 +411,16 @@ local function loop()
 		if playerNear(entry.part.Position) then
 			skippedNearby += 1
 			skipUntil[entry.target] = os.clock() + SKIP_SECONDS
-			status.Text = ("Skipped a candy, player nearby | Visited: %d"):format(visited)
+			status.Text = ("Skipped a target, player nearby | Visited: %d"):format(visited)
 			continue
 		end
 
-		status.Text = ("Going to nearest candy (%d studs) | Visited: %d"):format(math.floor(bestDist), visited)
+		status.Text = ("Going to nearest target (%d studs) | Visited: %d"):format(math.floor(bestDist), visited)
 		glideAbove(root, entry.part) 
 
 		if not enabled or deadThisRound or touchingLobby(root) then continue end
 		if not entry.target.Parent or not isTargetVisible(entry.part) then
-			status.Text = ("Candy taken while flying | Visited: %d"):format(visited)
+			status.Text = ("Target taken while flying | Visited: %d"):format(visited)
 			continue
 		end
 
@@ -426,7 +429,7 @@ local function loop()
 			touch(root, entry.part) 
 		end
 		visited += 1
-		status.Text = ("Visited: %d | Skipped: %d | Candies left: %d"):format(visited, skippedNearby, #targets - 1)
+		status.Text = ("Visited: %d | Skipped: %d | Targets left: %d"):format(visited, skippedNearby, #targets - 1)
 
 		task.wait(REST_TIME)
 
@@ -441,7 +444,7 @@ end
 
 local function setEnabled(state)
 	enabled = state
-	mainBtn.Text = "Candy TP: " .. (enabled and "ON" or "OFF") .. "  [H]"
+	mainBtn.Text = "Auto Farm: " .. (enabled and "ON" or "OFF") .. "  [H]"
 	mainBtn.BackgroundColor3 = enabled and GREEN or RED
 	if enabled then
 		task.spawn(loop)
