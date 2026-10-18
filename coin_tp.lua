@@ -4,13 +4,13 @@ local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 
--- ===== CONFIGURACIÓN OPTIMIZADA =====
+-- ===== CONFIGURACIÓN ULTRA-RÁPIDA =====
 local TOGGLE_KEY = Enum.KeyCode.H
-local REST_TIME = 0.8          
-local TRAVEL_DELAY = 0.5       
-local TRAVEL_SPEED = 21    
-local HOVER_HEIGHT = 3     
-local DROP_TIME = 0.35     
+local REST_TIME = 0.05         -- Se queda casi nada de tiempo tras recolectar
+local TRAVEL_DELAY = 0.05      -- No espera para ir al siguiente
+local TRAVEL_SPEED = 24        -- Un poco más rápido
+local HOVER_HEIGHT = 1.5       -- Vuela más bajo para tocar la moneda al instante
+local DROP_TIME = 0.1          -- Cae inmediatamente
 local SAFE_DISTANCE = 40   
 local AVOID_PLAYERS = false    
 local SKIP_SECONDS = 5     
@@ -57,7 +57,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -50, 1, 0)
 title.Position = UDim2.new(0, 14, 0, 0)
 title.BackgroundTransparency = 1
-title.Text = "Smart Farm v5"
+title.Text = "Speed Farm v6"
 title.TextColor3 = TEXT
 title.Font = Enum.Font.GothamBold
 title.TextSize = 14
@@ -198,7 +198,6 @@ local skippedNearby = 0
 local skipUntil = setmetatable({}, { __mode = "k" })
 local containerCache
 
--- Buscador de Contenedor
 local function findContainer()
 	if containerCache and containerCache.Parent then
 		return containerCache
@@ -215,7 +214,14 @@ local function findContainer()
 	return nil
 end
 
+-- Busca ESPECÍFICAMENTE la pieza que se puede recolectar (la que tiene el TouchInterest)
 local function getTargetPart(target)
+	for _, desc in target:GetDescendants() do
+		if desc:IsA("TouchInterest") then
+			return desc.Parent
+		end
+	end
+	-- Respaldo si el TouchInterest está oculto
 	if target:IsA("BasePart") then
 		return target
 	elseif target:IsA("Model") then
@@ -236,13 +242,8 @@ local function getRoot()
 	return char:FindFirstChild("HumanoidRootPart")
 end
 
--- =======================================================
--- DETECTOR DE LOBBY FÍSICO (NUEVO SISTEMA EXCLUSIVO)
--- =======================================================
 local function touchingLobby(root)
 	if not root then return false end
-	
-	-- 1. Detectar si estamos cerca de un SpawnLocation (Solo existen en el lobby)
 	for _, obj in workspace:GetDescendants() do
 		if obj:IsA("SpawnLocation") then
 			if (root.Position - obj.Position).Magnitude < 150 then
@@ -251,7 +252,6 @@ local function touchingLobby(root)
 		end
 	end
 	
-	-- 2. Detectar si el suelo que pisamos pertenece a una carpeta llamada Lobby/Spawn mediante láser
 	local rayOrigin = root.Position
 	local rayDirection = Vector3.new(0, -15, 0) 
 	local raycastParams = RaycastParams.new()
@@ -269,7 +269,6 @@ local function touchingLobby(root)
 			current = current.Parent
 		end
 	end
-
 	return false
 end
 
@@ -294,7 +293,7 @@ local function collectTargets(container)
 		local lowerName = string.lower(obj.Name)
 		if string.find(lowerName, "coin") or string.find(lowerName, "cand") then
 			local part = getTargetPart(obj)
-			if isTargetVisible(part) then
+			if part and isTargetVisible(part) then
 				visibleCount += 1
 				if not skipUntil[obj] or skipUntil[obj] < now then
 					if playerNear(part.Position) then
@@ -357,7 +356,6 @@ local function loop()
 			continue
 		end
 
-		-- Si estamos en el lobby, no hacemos nada más que esperar
 		if touchingLobby(root) then
 			status.Text = ("Waiting in lobby zone | Visited: %d"):format(visited)
 			task.wait(0.5)
@@ -395,7 +393,6 @@ local function loop()
 		end
 		local entry = best
 
-		-- Última validación de seguridad de distancia
 		if bestDist > MAX_FARM_DISTANCE then
 			status.Text = ("In Lobby (Map too far) | Visited: %d"):format(visited)
 			task.wait(1)
@@ -416,10 +413,9 @@ local function loop()
 			continue
 		end
 
-		status.Text = ("Farming... %d studs | Visited: %d"):format(math.floor(bestDist), visited)
+		status.Text = ("Zipping to target... %d studs"):format(math.floor(bestDist))
 		glideAbove(root, entry.part) 
 
-		-- Comprobación post-vuelo
 		if not enabled or touchingLobby(root) then continue end
 		if not entry.target.Parent or not isTargetVisible(entry.part) then
 			continue
@@ -430,15 +426,12 @@ local function loop()
 			touch(root, entry.part) 
 		end
 		visited += 1
-		status.Text = ("Visited: %d | Left: %d"):format(visited, #targets - 1)
 
 		task.wait(REST_TIME)
 
 		if entry.target.Parent then
 			skipUntil[entry.target] = os.clock() + SKIP_SECONDS
 		end
-
-		task.wait()
 	end
 	status.Text = ("Idle | Visited: %d"):format(visited)
 end
