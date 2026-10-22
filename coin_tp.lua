@@ -1,11 +1,3 @@
-if setclipboard then
-    setclipboard("https://discord.gg/NH2sekEXfg")
-elseif toclipboard then
-    toclipboard("https://discord.gg/NH2sekEXfg")
-else
-    warn("Clipboard function not supported by your executor.")
-end
-
 {
   "schemaVersion": 1,
   "projectId": "mm2-main",
